@@ -36,7 +36,7 @@ count_overpasses <- function(footprints) {
   overpasses <- 
     pmap(footprints, 
          .f = function(satellite, path, year, month, day, yday, GranuleID, StartDateTime, ArchiveSet, OrbitNumber, DayNightFlag, EastBoundingCoord, NorthBoundingCoord, SouthBoundingCoord, WestBoundingCoord, GRingLongitude1, GRingLongitude2, GRingLongitude3, GRingLongitude4, GRingLatitude1, GRingLatitude2, GRingLatitude3, GRingLatitude4, geometry) {
-      
+           
            daynight_r <- 
              r_0.25 %>% 
              coordinates() %>% 
@@ -61,7 +61,7 @@ count_overpasses <- function(footprints) {
            day_r <- night_r <- r_0.25
            values(day_r) <- daynight_r$day
            values(night_r) <- daynight_r$night
-
+           
            r <- 
              fasterize(sf = st_sf(st_sfc(geometry, crs = 4326)), 
                        raster = r_0.25, 
@@ -72,16 +72,46 @@ count_overpasses <- function(footprints) {
            night_r <- night_r * r
            
            return(list(day = day_r, night = night_r))
-           })
+         })
   
   day_sum <- lapply(overpasses, FUN = function(x) x$day) %>% stack() %>% sum()
   night_sum <- lapply(overpasses, FUN = function(x) x$night) %>% stack() %>% sum()
-
+  
   par(mfrow = c(1, 2))
   plot(day_sum, col = viridis::viridis(6), main = "Day overpass count")
   plot(night_sum, col = viridis::viridis(6), main = "Night overpass count")
-
+  
 }
+
+footprints_to_process <-
+  system2(command = "aws", args = "s3 ls s3://earthlab-mkoontz/MODIS-footprints/", stdout = TRUE) %>% 
+  tibble::enframe(name = NULL) %>% 
+  setNames("files_on_aws") %>% 
+  dplyr::mutate(footprints_processed = substr(files_on_aws, start = 32, stop = 63)) %>% 
+  dplyr::mutate(year_month = substr(footprints_processed, start = 1, stop = 7))
+
+this_footprint <- 
+  footprints_to_process %>% 
+  dplyr::filter(year_month == "2005-06") %>% 
+  slice(1)
+
+s3_file <- this_footprint$footprints_processed
+
+if (!file.exists(paste0('data/data_output/MODIS-footprints/', s3_file))) {
+system2(command = "aws", args = paste0('s3 cp s3://earthlab-mkoontz/MODIS-footprints/', s3_file, ' data/data_output/MODIS-footprints/', s3_file))
+}
+
+footprints <- sf::st_read(paste0('data/data_output/MODIS-footprints/', s3_file), 
+                          stringsAsFactors = FALSE)
+
+plot(footprints[1:100, ] %>% st_geometry())
+
+unique(footprints$satellite)
+
+nrow(footprints)
+length(unique(footprints$StartDateTime))
+
+
 
 
 satellite <- footprints$satellite[3]
