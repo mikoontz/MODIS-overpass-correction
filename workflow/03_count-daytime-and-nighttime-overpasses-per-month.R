@@ -11,7 +11,7 @@ library(viridis)
 library(purrr)
 library(furrr)
 
-plan(multiprocess)
+# plan(multiprocess)
 
 # global variables --------------------------------------------------------
 
@@ -104,11 +104,25 @@ system2(command = "aws", args = paste0('s3 cp s3://earthlab-mkoontz/MODIS-footpr
 footprints <- sf::st_read(paste0('data/data_output/MODIS-footprints/', s3_file), 
                           stringsAsFactors = FALSE)
 
+footprints_to_plot <-
+  footprints %>% 
+  rowid_to_column() %>% 
+  slice(295:300) %>% 
+  dplyr::mutate(rowid = factor(rowid))
+
+footprints_to_plot <- footprints_to_plot[, "rowid"]
 plot(footprints[1:100, ] %>% st_geometry())
+
+dev.off()
+plot(footprints[295, ] %>% st_geometry())
+plot(footprints[295:296, ] %>% st_geometry())
+
+plot(footprints_to_plot)
 
 unique(footprints$satellite)
 
 nrow(footprints)
+
 length(unique(footprints$StartDateTime))
 
 

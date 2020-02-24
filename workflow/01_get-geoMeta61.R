@@ -11,8 +11,6 @@ library(viridis)
 library(purrr)
 library(furrr)
 
-plan(multiprocess)
-
 # NOTE: Must use latest versions of GDAL, GEOS, and PROJ for this to work!
 # This SO answer was helpful for making sure {sf} linked to the latest
 # versions: https://stackoverflow.com/questions/44973639/trouble-installing-sf-due-to-gdal
