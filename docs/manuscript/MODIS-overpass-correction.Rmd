@@ -1,0 +1,163 @@
+---
+bibliography: ../docs_carpentry/MODIS-overpass-correction.bib
+csl: ../docs_carpentry/ecological-applications.csl
+params:
+  title: Correction for latitudinal bias of sampling effort for the MODIS instruments
+  author: |
+    Michael J. Koontz^1\*^
+  affiliation: |
+    ^1^Earth Lab, University of Colorado-Boulder; Boulder, CO, USA  
+  correspondence: |
+    michael.koontz@colorado.edu
+  keywords: |
+    MODIS, Aqua, Terra, active fire detections, MCD14ML 
+  date_generated: !r format(Sys.Date(), "%B %d, %Y")
+  
+geometry: margin=1in
+header-includes:
+  - \usepackage[left]{lineno}
+  - \linenumbers
+  - \usepackage{setspace}
+  - \doublespacing
+  - \DeclareUnicodeCharacter{200E}{}
+  - \usepackage{caption}
+  - \captionsetup[figure]{labelformat=empty}
+  - \captionsetup[table]{labelformat=empty}
+
+output: pdf_document
+---
+
+```{r setup, include = FALSE, echo = FALSE}
+knitr::opts_chunk$set(echo = FALSE, include = FALSE)
+```
+
+```{r dependencies}
+library(tidyverse)
+library(pander)
+library(captioner)
+```
+
+```{r captions}
+fig_nums <- captioner(prefix = "Figure")
+table_nums <- captioner(prefix = "Table")
+eq_nums <- captioner(prefix = "Equation")
+```
+
+# `r params$title`
+
+`r params$author`
+
+`r params$affiliation`
+
+*^\*^Correspondence:* ``r params$correspondence``
+
+*Keywords:* `r params$keywords`
+
+*Abstract word count:*   
+*Overall .docx word count:*   
+*Main text word count:*  (Intro:  Methods: ; Results: ; Discussion: )  
+*Text boxes word count:* 0  
+
+Date report generated: `r params$date_generated`
+
+## Abstract 
+
+## Introduction
+
+Accounting for sampling frequency is a key step in characterizing detections of phenomena. 
+This is true for detecting phenomena at all scales, from biological surveys to remotely-sensed Earth Observation (EO) data.
+The MODIS instrument is part of the suite of instruments on both the Aqua and Terra satellites.
+
+## Methods
+
+### Dependencies
+
+This workflow is run on a Docker container primarily using the `R` programming language linking to GDAL, PROJ, and GEOS (https://hub.docker.com/r/earthlab/r-spatial-aws; specific commit: https://github.com/earthlab/dockerfiles/tree/9bb18ba7cd17951c240eb1587f549d7932c8a96c).
+The workflow makes use of the `sf`, `raster`, and `fasterize` packages for spatial operations.
+It also relies on the `tidyverse` for general data manipulation and `lubridate` for working with datetimes.
+
+### Acquire data
+
+The geoMeta collection 61 product (https://ladsweb.modaps.eosdis.nasa.gov/archive/geoMeta/) is a non-official MODIS product that represents the corner-point latitude/longitude and north/south/east/west bounding coordinates for the 288 daily MODIS granules.
+Each granule represents a 5-minute swath of the MODIS instrument.
+The corner points are derived from the MOD03 (Terra) and MYD03 (Aqua) geolocation files in response to requests to the LAADS team for lightweight data that can be used to delineate the MODIS footprints.
+We use the `wget` tool to download every available .txt file in the geoMeta 61 product.
+Note that this process requires an EarthData account and an app key.
+You can register for an Eartdata account here: https://urs.earthdata.nasa.gov/.
+Information about acquiring an app key can be found here: https://ladsweb.modaps.eosdis.nasa.gov/tools-and-services/data-download-scripts/#requesting.
+
+### Defining global variables
+
+We define an extent representing the entirety of the Earth in the EPSG:4326 coordinate reference system.
+
+```
+global_extent <- 
+  tibble(lon = c(-180, 180, 180, -180, -180), lat = c(90, 90, -90, -90, 90)) %>% 
+  as.matrix() %>% 
+  list() %>% 
+  st_polygon() %>% 
+  st_sfc(crs = 4326) %>% 
+  st_sf()
+```
+
+We also read the predefined raster into the working environment, which will be used as a template to which we can represent the number of night/day overpasses per month per pixel of a desired spatial resolution. 
+
+### Generating MODIS image footprints
+
+#### Incorporating geoMeta product
+
+We read all the .txt files contained in the geoMeta product into a large data.frame and split it into the desired aggregations for the overpass counts (by both year and month, in this case).
+For each year/month combination, We iterated through each row representing a single 5-minute granule for a single satellite (hereafter referred to as the 'granule').
+We created a multipoint in the EPSG:4326 coordinate reference system using the 4 pairs of longitude (GRingLongitude[1-4]) / latitude (GRingLatitude[1-4]) contained in each row as well as repeated the first point (in order to close the future polygon). 
+We cast this multipoint to a `LINESTRING` and segmentized (using `sf::st_segmentize()`) it with increments of 10 km.
+Importantly, the segmentation process connects the points in a `LINESTRING` using great circle paths, which will properly mimic how the MODIS instrument's footprint overlays on top of the spherical Earth (compared to connecting the points using straight lines on the 2-dimensional map projection).
+
+#### Accomodating footprints that cross the poles
+
+Special accomodation is needed for MODIS footprints that overlap the North or South Pole to prevent creation of self-intersecting polygons.
+If the north bounding coordinate (NorthBoundingCoord) or the south bounding coordinate (SouthBoundingCoord) for the granule are very near the pole (within 0.1 degree), we apply this extra accomodation.
+In this circumstance, the segmentized LINESTRING from the previous step will, by definition, cross uninterrupted from the -180 meridian to the 180 meridian.
+We use the segmentized LINESTRING as a 'blade' to divide the polygon representing the global extent into two polygons, a northern polygon and a southern polygon.
+We can then use the northernmost polygon as the granule's footprint if its north bounding coordinate is near the North Pole and the southernmost polygon as the granule's footprint if the south bounding coordinate is near the South Pole.
+
+#### Closing the non-North and non-South Pole MODIS footprints
+
+In all other cases, we can cast the footprint's LINESTRING to be a polygon, ensure proper wrapping around the dateline (-180/180 meridian), and assign the EPSG:4326 coordinate reference system.
+
+### Counting granule footprint overlap with daytime and nighttime 
+
+#### Determining day vs. night at datetime of each granule
+
+
+## Results
+
+Between the start of each satellite's record of geoMeta data availability (Aqua: 2002-07-03 23:55; Terra: 2000-02-23 23:55) until the end of 2019, there were 13577 geoMeta .txt files 
+comprising 1.11 GB.
+
+### Figure showing a few granule footprints
+
+### Figure showing night/day classification
+
+### Figure showing overlap count for a single day
+
+### Figure showing daytime overpass and nighttime overpass count for a whole month
+
+## Discussion
+
+Here, we propose an overpass correction to account for latitudinal differences in sampling effort of the MODIS instruments aboard the Aqua and Terra satellites.
+This approach and the data generated have immediate applications for all efforts seeking to characterize MODIS active fire detections across latitudes.
+
+### Future improvements
+
+The MOD03 (Terra) and MYD03 (Aqua) products contain geolocation information for the MODIS instrument at a 1-km spatial resolution and a 5-minute temporal resolution (https://ladsweb.modaps.eosdis.nasa.gov/filespec/MODIS/5/MOD03). 
+Indeed, the geoMeta data used to generate MODIS footprints in this manuscript are derived from these geolocation products by the LAADS team and are distributed as a 'non-official MODIS archive product' (https://ladsweb.modaps.eosdis.nasa.gov/archive/geoMeta/README)
+Among its layers, the geolocation products include the latitude (layer 13) and longitude (layer 14) of the centroids of 1 km pixels that the MODIS instrument covers in 5 minute increments and thus represent the best available information about what the MODIS instruments are viewing in any given 5-minute period. 
+A barrier to using these official products to delineate MODIS footprints is their size.
+Each file (representing a 5-minute period for either Aqua or Terra) is approximately 30 MB, resulting in >8 GB/day/satellite and >100 TB combined of data across the MODIS record (as of this writing).
+
+The MCD14ML MODIS active fire product contains point locations representing the centroid of pixels flagged as containing at least one active fire at a 1-minute temporal resolution.
+Both the geoMeta non-official product and the MOD03/MYD03 geolocation products have a 5-minute temporal resolution, so matching the two resolutions may be desireable (but may require a fundamental change in the way the data are distributed by LAADS).
+
+### Conclusions
+
+The data derived in this manuscript should allow users of MODIS products to take sampling effort into account when characterizing phenomena detected by the instrument, such as active fires.
