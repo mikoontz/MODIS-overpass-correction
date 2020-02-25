@@ -7,9 +7,12 @@ library(sf)
 library(lwgeom)
 library(raster)
 library(fasterize)
+library(stars)
 library(viridis)
 library(purrr)
 library(furrr)
+library(dtplyr)
+library(data.table)
 
 # plan(multiprocess)
 
@@ -40,27 +43,29 @@ count_overpasses <- function(footprints) {
            daynight_r <- 
              r_0.25 %>% 
              coordinates() %>% 
-             as.data.frame() %>% 
-             setNames(c("longitude", "latitude")) %>% 
-             dplyr::mutate(solar_offset = longitude / 15,
-                           acq_datetime = StartDateTime,
-                           acq_hour = hour(acq_datetime),
-                           acq_min = minute(acq_datetime),
-                           local_datetime = acq_datetime + as.duration(solar_offset * 60 * 60),
-                           local_doy = lubridate::yday(local_datetime),
-                           local_hour_decmin = ((acq_hour) + (acq_min / 60) + solar_offset + 24) %% 24,
-                           local_solar_hour_decmin_round = round(local_hour_decmin),
-                           local_solar_hour_decmin_round0.5 = round(local_hour_decmin * 2) / 2,
-                           h = (local_hour_decmin - 12) * 15 * pi / 180,
-                           phi = latitude * pi / 180,
-                           delta = -asin(0.39779 * cos(pi / 180 * (0.98565 * (local_doy + 10) + 360 / pi * 0.0167 * sin(pi / 180 * (0.98565 * (local_doy - 2)))))),
-                           solar_elev_angle = (asin(sin(phi)*sin(delta) + cos(phi)*cos(delta)*cos(h))) * 180 / pi,
-                           day = ifelse(solar_elev_angle >= 0, yes = 1, no = 0),
-                           night = ifelse(solar_elev_angle < 0, yes = 1, no = 0))
+             as.data.table() %>% 
+             setNames(c("longitude", "latitude"))
            
-           day_r <- night_r <- r_0.25
-           values(day_r) <- daynight_r$day
-           values(night_r) <- daynight_r$night
+           daynight_r[, `:=`(solar_offset = longitude / 15,
+                             StartDateTime = StartDateTime,
+                             acq_datetime = StartDateTime + as.duration(2.5 * 60))]
+           
+           daynight_r[, `:=`(acq_hour = lubridate::hour(acq_datetime),
+                             acq_min = lubridate::minute(acq_datetime),
+                             local_datetime = acq_datetime + as.duration(solar_offset * 60 * 60))]
+           
+           daynight_r[, `:=`(local_doy = lubridate::yday(local_datetime),
+                             local_hour_decmin = ((acq_hour) + (acq_min / 60) + solar_offset + 24) %% 24)]
+           
+           daynight_r[, `:=`(h = (local_hour_decmin - 12) * 15 * pi / 180,
+                             phi = latitude * pi / 180,
+                             delta = -asin(0.39779 * cos(pi / 180 * (0.98565 * (local_doy + 10) + 360 / pi * 0.0167 * sin(pi / 180 * (0.98565 * (local_doy - 2)))))))]
+                             
+           daynight_r[, solar_elev_angle := (asin(sin(phi)*sin(delta) + cos(phi)*cos(delta)*cos(h))) * 180 / pi]
+           
+           
+           daynight_r[, `:=`(day = ifelse(solar_elev_angle >= 0, yes = 1, no = 0),
+                             night = ifelse(solar_elev_angle < 0, yes = 1, no = 0))]
            
            r <- 
              fasterize(sf = st_sf(st_sfc(geometry, crs = 4326)), 
@@ -68,87 +73,84 @@ count_overpasses <- function(footprints) {
                        fun = "count", 
                        background = 0)
            
-           day_r <- day_r * r
-           night_r <- night_r * r
+           daynight_r[, overpass := raster::values(r)]
+           daynight_r[, `:=`(day_overpass = day * overpass,
+                             night_overpass = night * overpass)]
            
-           return(list(day = day_r, night = night_r))
+           return(daynight_overpass = daynight_r[, c("day_overpass", "night_overpass")])
          })
   
-  day_sum <- lapply(overpasses, FUN = function(x) x$day) %>% stack() %>% sum()
-  night_sum <- lapply(overpasses, FUN = function(x) x$night) %>% stack() %>% sum()
+  day_sum <- 
+    lapply(overpasses, FUN = function(x) x$day_overpass) %>% 
+    do.call("cbind", .) %>% 
+    rowSums()
   
-  par(mfrow = c(1, 2))
-  plot(day_sum, col = viridis::viridis(6), main = "Day overpass count")
-  plot(night_sum, col = viridis::viridis(6), main = "Night overpass count")
+  night_sum <- 
+    lapply(overpasses, FUN = function(x) x$night_overpass) %>% 
+    do.call("cbind", .) %>% 
+    rowSums()
   
+  day_r <- night_r <- r_0.25
+  values(day_r) <- day_sum
+  values(night_r) <- night_sum
+  
+  this_year <- unique(footprints$year)
+  this_month <- unique(footprints$month)
+  this_satellite <- unique(footprints$satellite)
+  
+  night_file <- paste0(this_year, "-", this_month, "_", this_satellite, "_night-overpass-count.tif")
+  
+  day_file <- paste0(this_year, "-", this_month, "_", this_satellite, "_day-overpass-count.tif")
+  
+  night_path <- file.path("data", "data_output", "MODIS-overpass-counts", night_file)
+  day_path <- file.path("data", "data_output", "MODIS-overpass-counts", day_file)
+  
+  raster::writeRaster(x = night_r, filename = night_path)
+  raster::writeRaster(x = day_r, filename = day_path)
+  
+  system2(command = "aws", args = paste0('s3 cp ', night_path, ' s3://earthlab-mkoontz/MODIS-overpass-counts/', night_file))
+  
+  system2(command = "aws", args = paste0('s3 cp ', day_path, ' s3://earthlab-mkoontz/MODIS-overpass-counts/', day_file))
+  
+  return(list(night_r, day_r))
 }
 
-footprints_to_process <-
+overpasses_processed <-
+  system2(command = "aws", args = "s3 ls s3://earthlab-mkoontz/MODIS-overpass-counts/", stdout = TRUE) %>% 
+  tibble::enframe(name = NULL) %>% 
+  setNames("files_on_aws") %>% 
+  dplyr::mutate(satellite = ifelse(grepl(pattern = "Terra", x = files_on_aws), yes = "Terra", no = "Aqua")) %>% 
+  dplyr::mutate(night_or_day = ifelse(grepl(pattern = "night", x = files_on_aws), yes = "night", no = "day")) %>% 
+  dplyr::mutate(overpasses_processed = substr(files_on_aws, start = 32, stop = nchar(files_on_aws) - 4)) %>% 
+  dplyr::mutate(year_month_sat = ifelse(satellite == "Terra", 
+                                        yes = substr(overpasses_processed, start = 1, stop = 13),
+                                        no = substr(overpasses_processed, start = 1, stop = 12)))
+
+dir.create("data/data_output/MODIS-overpass-counts", recursive = TRUE)
+
+overpasses_to_process <- 
   system2(command = "aws", args = "s3 ls s3://earthlab-mkoontz/MODIS-footprints/", stdout = TRUE) %>% 
   tibble::enframe(name = NULL) %>% 
   setNames("files_on_aws") %>% 
-  dplyr::mutate(footprints_processed = substr(files_on_aws, start = 32, stop = 63)) %>% 
-  dplyr::mutate(year_month = substr(footprints_processed, start = 1, stop = 7))
+  dplyr::mutate(satellite = ifelse(grepl(pattern = "Terra", x = files_on_aws), yes = "Terra", no = "Aqua")) %>% 
+  dplyr::mutate(footprints_processed = substr(files_on_aws, start = 32, stop = nchar(files_on_aws))) %>% 
+  dplyr::mutate(year_month_sat = ifelse(satellite == "Terra", 
+                                        yes = substr(footprints_processed, start = 1, stop = 13),
+                                        no = substr(footprints_processed, start = 1, stop = 12))) %>% 
+  dplyr::filter(!(year_month_sat %in% unique(overpasses_processed$year_month_sat))) %>% 
+  dplyr::pull(footprints_processed)
+  
 
-this_footprint <- 
-  footprints_to_process %>% 
-  dplyr::filter(year_month == "2005-06") %>% 
-  slice(1)
+map(overpasses_to_process, .f = function(this_footprint) {
+  
+  local_path <- paste0("data/data_output/MODIS-footprints/", this_footprint)
+  
+  system2(command = "aws", args = paste0('s3 cp s3://earthlab-mkoontz/MODIS-footprints/', this_footprint, ' ', local_path))
+  
+  footprints <- sf::st_read(local_path)
+  
+  this_overpass <- count_overpasses(footprints)
+  
+  unlink(local_path)
 
-s3_file <- this_footprint$footprints_processed
-
-if (!file.exists(paste0('data/data_output/MODIS-footprints/', s3_file))) {
-system2(command = "aws", args = paste0('s3 cp s3://earthlab-mkoontz/MODIS-footprints/', s3_file, ' data/data_output/MODIS-footprints/', s3_file))
-}
-
-footprints <- sf::st_read(paste0('data/data_output/MODIS-footprints/', s3_file), 
-                          stringsAsFactors = FALSE)
-
-footprints_to_plot <-
-  footprints %>% 
-  rowid_to_column() %>% 
-  slice(295:300) %>% 
-  dplyr::mutate(rowid = factor(rowid))
-
-footprints_to_plot <- footprints_to_plot[, "rowid"]
-plot(footprints[1:100, ] %>% st_geometry())
-
-dev.off()
-plot(footprints[295, ] %>% st_geometry())
-plot(footprints[295:296, ] %>% st_geometry())
-
-plot(footprints_to_plot)
-
-unique(footprints$satellite)
-
-nrow(footprints)
-
-length(unique(footprints$StartDateTime))
-
-
-
-
-satellite <- footprints$satellite[3]
-path <- footprints$path[3]
-year <- footprints$year[3]
-month <- footprints$month[3]
-day <- footprints$day[3]
-yday <- footprints$yday[3]
-GranuleID <- footprints$GranuleID[3]
-StartDateTime <- footprints$StartDateTime[3]
-ArchiveSet <- footprints$ArchiveSet[3]
-OrbitNumber <- footprints$OrbitNumber[3]
-DayNightFlag <- footprints$DayNightFlag[3]
-EastBoundingCoord <- footprints$EastBoundingCoord[3]
-NorthBoundingCoord <- footprints$NorthBoundingCoord[3]
-SouthBoundingCoord <- footprints$SouthBoundingCoord[3]
-WestBoundingCoord <- footprints$WestBoundingCoord[3]
-GRingLongitude1 <- footprints$GRingLongitude1[3]
-GRingLongitude2 <- footprints$GRingLongitude2[3]
-GRingLongitude3 <- footprints$GRingLongitude3[3]
-GRingLongitude4 <- footprints$GRingLongitude4[3]
-GRingLatitude1 <- footprints$GRingLatitude1[3]
-GRingLatitude2 <- footprints$GRingLatitude2[3]
-GRingLatitude3 <- footprints$GRingLatitude3[3]
-GRingLatitude4 <- footprints$GRingLatitude4[3]
-geometry <- footprints$geometry[3]
+})

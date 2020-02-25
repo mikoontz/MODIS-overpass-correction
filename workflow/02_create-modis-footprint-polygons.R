@@ -290,27 +290,30 @@ geoMeta_df <- rbind(aqua, terra)
 
 # test small snippets of geoMeta for polygon creation ---------------------
 
-geoMeta_target <- 
-  geoMeta_df %>% 
-  dplyr::filter(path == "data/data_output/MODIS-geoMeta61/AQUA/2005/MYD03_2005-06-02.txt")
-
-footprints <- get_MODIS_footprints(geoMeta_target)
-plot(footprints[sample(1:nrow(footprints), size = 20), ] %>% st_geometry(), axes = TRUE)
+# geoMeta_target <- 
+#   geoMeta_df %>% 
+#   dplyr::filter(path == "data/data_output/MODIS-geoMeta61/AQUA/2005/MYD03_2005-06-02.txt")
+# 
+# footprints <- get_MODIS_footprints(geoMeta_target)
+# plot(footprints[sample(1:nrow(footprints), size = 20), ] %>% st_geometry(), axes = TRUE)
 
 # Find out what footprints have already been processed and don't redo that work
 already_processed <- 
   system2(command = "aws", args = "s3 ls s3://earthlab-mkoontz/MODIS-footprints/", stdout = TRUE) %>% 
   tibble::enframe(name = NULL) %>% 
   setNames("files_on_aws") %>% 
-  dplyr::mutate(footprints_processed = substr(files_on_aws, start = 32, stop = 63)) %>% 
-  dplyr::mutate(year_month = substr(footprints_processed, start = 1, stop = 7))
+  dplyr::mutate(satellite = ifelse(grepl(pattern = "Terra", x = files_on_aws), yes = "Terra", no = "Aqua")) %>% 
+  dplyr::mutate(footprints_processed = substr(files_on_aws, start = 32, stop = nchar(files_on_aws))) %>% 
+  dplyr::mutate(year_month_sat = ifelse(satellite == "Terra", 
+                                        yes = substr(footprints_processed, start = 1, stop = 13),
+                                        no = substr(footprints_processed, start = 1, stop = 12)))
 
 geoMeta_list <- 
   geoMeta_df %>% 
-  dplyr::mutate(year_month = paste(year, month, sep = "-")) %>% 
-  dplyr::filter(!(year_month %in% already_processed$year_month)) %>% 
-  dplyr::select(-year_month) %>% 
-  dplyr::group_by(year, month) %>% 
+  dplyr::mutate(year_month_sat = paste0(year, "-", month, "_", satellite)) %>% 
+  dplyr::filter(!(year_month_sat %in% already_processed$year_month_sat)) %>% 
+  dplyr::select(-year_month_sat) %>% 
+  dplyr::group_by(year, month, satellite) %>% 
   dplyr::group_split()
 
 dir.create("data/data_output/MODIS-footprints", recursive = TRUE)
