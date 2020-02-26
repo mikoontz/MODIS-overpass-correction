@@ -166,6 +166,7 @@ map(overpasses_to_process, .f = function(this_footprint) {
   
   this_overpass <- count_overpasses(footprints, r_0.25)
   
-  unlink(local_path)
+  # Don't dellete local file just yet.
+  # unlink(local_path)
   
 })
