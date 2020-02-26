@@ -65,7 +65,7 @@ count_overpasses <- function(footprints, raster_template) {
            
            r <- 
              fasterize(sf = st_sf(st_sfc(geometry, crs = 4326)), 
-                       raster = r_0.25, 
+                       raster = raster_template, 
                        fun = "count", 
                        background = 0)
            
