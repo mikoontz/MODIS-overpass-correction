@@ -123,7 +123,7 @@ count_overpasses <- function(footprints, raster_template) {
   
   system2(command = "aws", args = paste0('s3 cp ', day_path, ' s3://earthlab-mkoontz/MODIS-overpass-counts/', day_file))
   
-  return(list(night_r, day_r))
+  return(invisible())
 }
 
 overpasses_processed <-
