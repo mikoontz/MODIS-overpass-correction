@@ -214,7 +214,8 @@ get_MODIS_footprints <- function(geoMeta, overwrite = FALSE) {
   
   system2(command = "aws", args = paste0('s3 cp ', this_path, ' s3://earthlab-mkoontz/MODIS-footprints/', this_file))
   
-  return(footprints)
+  # Don't return anything
+  return(invisible())
   
 }
 
