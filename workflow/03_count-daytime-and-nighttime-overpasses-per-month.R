@@ -114,37 +114,59 @@ count_overpasses <- function(footprints, raster_template) {
   day_file <- paste0(this_year, "-", this_month, "_", this_satellite, "_day-overpass-count_", res(raster_template)[1], ".tif")
   
   night_path <- file.path("data", "data_output", paste0("MODIS-overpass-counts_", res(raster_template)[1]), night_file)
+  
   day_path <- file.path("data", "data_output", paste0("MODIS-overpass-counts_", res(raster_template)[1]), day_file)
   
   raster::writeRaster(x = night_r, filename = night_path)
   raster::writeRaster(x = day_r, filename = day_path)
   
-  system2(command = "aws", args = paste0('s3 cp ', night_path, ' s3://earthlab-mkoontz/MODIS-overpass-counts_', res(raster_template)[1], '/', night_file))
+  system2(command = "aws", 
+          args = paste0('s3 cp ', night_path, ' s3://earthlab-mkoontz/MODIS-overpass-counts_', res(raster_template)[1], '/', night_file))
   
-  system2(command = "aws", args = paste0('s3 cp ', day_path, ' s3://earthlab-mkoontz/MODIS-overpass-counts_', res(raster_template)[1], '/', day_file))
+  system2(command = "aws", 
+          args = paste0('s3 cp ', day_path, ' s3://earthlab-mkoontz/MODIS-overpass-counts_', res(raster_template)[1], '/', day_file))
   
   return(invisible())
 }
 
+
+# Figure out what has been processed already
+
+raster_template <- r_2.5
+  
 overpasses_processed <-
-  system2(command = "aws", args = "s3 ls s3://earthlab-mkoontz/MODIS-overpass-counts/", stdout = TRUE) %>% 
+  system2(command = "aws", 
+          args = paste0("s3 ls s3://earthlab-mkoontz/MODIS-overpass-counts_", res(raster_template)[1], "/"), 
+          stdout = TRUE) %>% 
   tibble::enframe(name = NULL) %>% 
   setNames("files_on_aws") %>% 
-  dplyr::mutate(satellite = ifelse(grepl(pattern = "Terra", x = files_on_aws), yes = "Terra", no = "Aqua")) %>% 
-  dplyr::mutate(night_or_day = ifelse(grepl(pattern = "night", x = files_on_aws), yes = "night", no = "day")) %>% 
-  dplyr::mutate(overpasses_processed = substr(files_on_aws, start = 32, stop = nchar(files_on_aws) - 4)) %>% 
+  dplyr::mutate(satellite = ifelse(grepl(pattern = "Terra", x = files_on_aws), 
+                                   yes = "Terra", 
+                                   no = "Aqua")) %>% 
+  dplyr::mutate(night_or_day = ifelse(grepl(pattern = "night", x = files_on_aws), 
+                                      yes = "night", 
+                                      no = "day")) %>% 
+  dplyr::mutate(overpasses_processed = substr(files_on_aws, 
+                                              start = 32, 
+                                              stop = nchar(files_on_aws) - 4)) %>% 
   dplyr::mutate(year_month_sat = ifelse(satellite == "Terra", 
                                         yes = substr(overpasses_processed, start = 1, stop = 13),
                                         no = substr(overpasses_processed, start = 1, stop = 12)))
 
-dir.create("data/data_output/MODIS-overpass-counts", recursive = TRUE)
+dir.create(paste0("data/data_output/MODIS-overpass-counts_", res(raster_template)[1], "/"), recursive = TRUE)
 
 overpasses_to_process <- 
-  system2(command = "aws", args = "s3 ls s3://earthlab-mkoontz/MODIS-footprints/", stdout = TRUE) %>% 
+  system2(command = "aws", 
+          args = "s3 ls s3://earthlab-mkoontz/MODIS-footprints/", 
+          stdout = TRUE) %>% 
   tibble::enframe(name = NULL) %>% 
   setNames("files_on_aws") %>% 
-  dplyr::mutate(satellite = ifelse(grepl(pattern = "Terra", x = files_on_aws), yes = "Terra", no = "Aqua")) %>% 
-  dplyr::mutate(footprints_processed = substr(files_on_aws, start = 32, stop = nchar(files_on_aws))) %>% 
+  dplyr::mutate(satellite = ifelse(grepl(pattern = "Terra", x = files_on_aws), 
+                                   yes = "Terra", 
+                                   no = "Aqua")) %>% 
+  dplyr::mutate(footprints_processed = substr(files_on_aws, 
+                                              start = 32, 
+                                              stop = nchar(files_on_aws))) %>% 
   dplyr::mutate(year_month_sat = ifelse(satellite == "Terra", 
                                         yes = substr(footprints_processed, start = 1, stop = 13),
                                         no = substr(footprints_processed, start = 1, stop = 12))) %>% 
