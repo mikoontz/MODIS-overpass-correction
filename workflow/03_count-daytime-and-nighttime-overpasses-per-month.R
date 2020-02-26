@@ -186,7 +186,7 @@ furrr::future_map(overpasses_to_process, .f = function(this_footprint) {
   
   footprints <- sf::st_read(local_path)
   
-  this_overpass <- count_overpasses(footprints, r_2.5)
+  this_overpass <- count_overpasses(footprints, raster_template)
   
   # Don't dellete local file just yet.
   # unlink(local_path)
