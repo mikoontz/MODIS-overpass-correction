@@ -34,14 +34,14 @@ r_2.5 <- raster::raster("data/data_raw/grid_2_5_degree_vars_modis_D_AFC_num_Apri
 
 # build rasterized count of overpasses ------------------------------------
 
-count_overpasses <- function(footprints) {
+count_overpasses <- function(footprints, raster_template) {
   
   overpasses <- 
     pmap(footprints, 
          .f = function(satellite, path, year, month, day, yday, GranuleID, StartDateTime, ArchiveSet, OrbitNumber, DayNightFlag, EastBoundingCoord, NorthBoundingCoord, SouthBoundingCoord, WestBoundingCoord, GRingLongitude1, GRingLongitude2, GRingLongitude3, GRingLongitude4, GRingLatitude1, GRingLatitude2, GRingLatitude3, GRingLatitude4, geometry) {
            
            daynight_r <- 
-             r_0.25 %>% 
+             raster_template %>% 
              coordinates() %>% 
              as.data.table() %>% 
              setNames(c("longitude", "latitude"))
@@ -60,7 +60,7 @@ count_overpasses <- function(footprints) {
            daynight_r[, `:=`(h = (local_hour_decmin - 12) * 15 * pi / 180,
                              phi = latitude * pi / 180,
                              delta = -asin(0.39779 * cos(pi / 180 * (0.98565 * (local_doy + 10) + 360 / pi * 0.0167 * sin(pi / 180 * (0.98565 * (local_doy - 2)))))))]
-                             
+           
            daynight_r[, solar_elev_angle := (asin(sin(phi)*sin(delta) + cos(phi)*cos(delta)*cos(h))) * 180 / pi]
            
            
@@ -77,20 +77,35 @@ count_overpasses <- function(footprints) {
            daynight_r[, `:=`(day_overpass = day * overpass,
                              night_overpass = night * overpass)]
            
-           return(daynight_overpass = daynight_r[, c("day_overpass", "night_overpass")])
+           if(sum(daynight_r$day_overpass) > 0) {
+             day_overpass <- daynight_r$day_overpass
+           } else {day_overpass <- NULL}
+           
+           if(sum(daynight_r$night_overpass) > 0) {
+             night_overpass <- daynight_r$night_overpass
+           } else {night_overpass <- NULL}
+           
+           
+           return(list(day_overpass = day_overpass, night_overpass = night_overpass))
          })
   
   day_sum <- 
-    lapply(overpasses, FUN = function(x) x$day_overpass) %>% 
+    lapply(overpasses, FUN = function(x) x$day_overpass)
+  
+  day_sum <-
+    day_sum[!sapply(day_sum, is.null)] %>% 
     do.call("cbind", .) %>% 
     rowSums()
   
   night_sum <- 
-    lapply(overpasses, FUN = function(x) x$night_overpass) %>% 
+    lapply(overpasses, FUN = function(x) x$night_overpass)
+  
+  night_sum <-
+    night_sum[!sapply(night_sum, is.null)] %>% 
     do.call("cbind", .) %>% 
     rowSums()
   
-  day_r <- night_r <- r_0.25
+  day_r <- night_r <- raster_template
   values(day_r) <- day_sum
   values(night_r) <- night_sum
   
@@ -98,9 +113,9 @@ count_overpasses <- function(footprints) {
   this_month <- unique(footprints$month)
   this_satellite <- unique(footprints$satellite)
   
-  night_file <- paste0(this_year, "-", this_month, "_", this_satellite, "_night-overpass-count.tif")
+  night_file <- paste0(this_year, "-", this_month, "_", this_satellite, "_night-overpass-count_", res(raster_template)[1], ".tif")
   
-  day_file <- paste0(this_year, "-", this_month, "_", this_satellite, "_day-overpass-count.tif")
+  day_file <- paste0(this_year, "-", this_month, "_", this_satellite, "_day-overpass-count_", res(raster_template)[1], ".tif")
   
   night_path <- file.path("data", "data_output", "MODIS-overpass-counts", night_file)
   day_path <- file.path("data", "data_output", "MODIS-overpass-counts", day_file)
@@ -139,18 +154,20 @@ overpasses_to_process <-
                                         no = substr(footprints_processed, start = 1, stop = 12))) %>% 
   dplyr::filter(!(year_month_sat %in% unique(overpasses_processed$year_month_sat))) %>% 
   dplyr::pull(footprints_processed)
-  
+
 
 map(overpasses_to_process, .f = function(this_footprint) {
   
   local_path <- paste0("data/data_output/MODIS-footprints/", this_footprint)
   
-  system2(command = "aws", args = paste0('s3 cp s3://earthlab-mkoontz/MODIS-footprints/', this_footprint, ' ', local_path))
+  if(!file.exists(local_path)) {
+    system2(command = "aws", args = paste0('s3 cp s3://earthlab-mkoontz/MODIS-footprints/', this_footprint, ' ', local_path))
+  }
   
   footprints <- sf::st_read(local_path)
   
-  this_overpass <- count_overpasses(footprints)
+  this_overpass <- count_overpasses(footprints, r_0.25)
   
   unlink(local_path)
-
+  
 })
