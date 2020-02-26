@@ -193,10 +193,9 @@ get_MODIS_footprints <- function(geoMeta, overwrite = FALSE) {
   # (and the user doesn't want to overwrite it), then upload that local file
   # to the S3 bucket
   # 
-  
-  this_year <- unique(footprints$year)
-  this_month <- unique(footprints$month)
-  this_satellite <- unique(footprints$satellite)
+  this_year <- unique(geoMeta$year)
+  this_month <- unique(geoMeta$month)
+  this_satellite <- unique(geoMeta$satellite)
   
   this_file <- paste0(this_year, "-", this_month, "_", this_satellite, "_5-minute-footprints.gpkg")
   
