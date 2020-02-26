@@ -108,7 +108,7 @@ get_MODIS_granule_footprints <- function(satellite, path, year, month, day, yday
       # (which is the dateline in the original projection)
       # Translate the split polygons to their appropriate places
       if (WestBoundingCoord >= EastBoundingCoord) {
-       
+        
         offset <- 180
         
         pt1 <- pt1 + c(offset, 0)
@@ -165,13 +165,13 @@ get_MODIS_granule_footprints <- function(satellite, path, year, month, day, yday
         west_poly <- 
           west_poly %>% 
           sf::st_set_crs(4326)
-          
+        
         footprint <- 
           lapply(list(east_poly, west_poly), sf::st_as_sf) %>% 
           do.call("rbind", .) %>% 
           dplyr::rename(geometry = x) %>% 
           dplyr::summarize()
-
+        
       } 
   }
   
@@ -187,14 +187,12 @@ get_MODIS_granule_footprints <- function(satellite, path, year, month, day, yday
   
 }
 
-get_MODIS_footprints <- function(geoMeta) {
+get_MODIS_footprints <- function(geoMeta, overwrite = FALSE) {
   
-  geoMeta <- tidyr::unnest(geoMeta, cols = geoMeta)
-  
-  footprints <-
-    pmap(geoMeta, .f = get_MODIS_granule_footprints)
-  
-  footprints <- do.call(what = "rbind", args = footprints)
+  # First do a check to see whether the file exists locally already. If it does,
+  # (and the user doesn't want to overwrite it), then upload that local file
+  # to the S3 bucket
+  # 
   
   this_year <- unique(footprints$year)
   this_month <- unique(footprints$month)
@@ -203,9 +201,18 @@ get_MODIS_footprints <- function(geoMeta) {
   this_file <- paste0(this_year, "-", this_month, "_", this_satellite, "_5-minute-footprints.gpkg")
   
   this_path <- file.path("data", "data_output", "MODIS-footprints", this_file)
-
-  sf::st_write(obj = footprints, dsn = this_path, delete_dsn = TRUE)
-
+  
+  if(!file.exists(this_path) | overwrite) {
+    geoMeta <- tidyr::unnest(geoMeta, cols = geoMeta)
+    
+    footprints <-
+      pmap(geoMeta, .f = get_MODIS_granule_footprints)
+    
+    footprints <- do.call(what = "rbind", args = footprints)
+    
+    sf::st_write(obj = footprints, dsn = this_path, delete_dsn = TRUE)
+  }
+  
   system2(command = "aws", args = paste0('s3 cp ', this_path, ' s3://earthlab-mkoontz/MODIS-footprints/', this_file))
   
   return(footprints)
