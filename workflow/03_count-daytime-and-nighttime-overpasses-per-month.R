@@ -12,8 +12,6 @@ library(purrr)
 library(furrr)
 library(data.table)
 
-# plan(multiprocess)
-
 # global variables --------------------------------------------------------
 
 global_extent <- 
@@ -154,7 +152,9 @@ overpasses_to_process <-
   dplyr::pull(footprints_processed)
 
 
-map(overpasses_to_process, .f = function(this_footprint) {
+plan(multiprocess, workers = 2)
+
+furrr::future_map(overpasses_to_process, .f = function(this_footprint) {
   
   local_path <- paste0("data/data_output/MODIS-footprints/", this_footprint)
   
