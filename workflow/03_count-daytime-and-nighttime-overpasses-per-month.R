@@ -113,15 +113,15 @@ count_overpasses <- function(footprints, raster_template) {
   
   day_file <- paste0(this_year, "-", this_month, "_", this_satellite, "_day-overpass-count_", res(raster_template)[1], ".tif")
   
-  night_path <- file.path("data", "data_output", "MODIS-overpass-counts", night_file)
-  day_path <- file.path("data", "data_output", "MODIS-overpass-counts", day_file)
+  night_path <- file.path("data", "data_output", paste0("MODIS-overpass-counts_", res(raster_template)[1]), night_file)
+  day_path <- file.path("data", "data_output", paste0("MODIS-overpass-counts_", res(raster_template)[1]), day_file)
   
   raster::writeRaster(x = night_r, filename = night_path)
   raster::writeRaster(x = day_r, filename = day_path)
   
-  system2(command = "aws", args = paste0('s3 cp ', night_path, ' s3://earthlab-mkoontz/MODIS-overpass-counts/', night_file))
+  system2(command = "aws", args = paste0('s3 cp ', night_path, ' s3://earthlab-mkoontz/MODIS-overpass-counts_', res(raster_template)[1], '/', night_file))
   
-  system2(command = "aws", args = paste0('s3 cp ', day_path, ' s3://earthlab-mkoontz/MODIS-overpass-counts/', day_file))
+  system2(command = "aws", args = paste0('s3 cp ', day_path, ' s3://earthlab-mkoontz/MODIS-overpass-counts_', res(raster_template)[1], '/', day_file))
   
   return(invisible())
 }
