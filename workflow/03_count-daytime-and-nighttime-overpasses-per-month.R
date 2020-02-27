@@ -119,8 +119,8 @@ count_overpasses <- function(footprints, raster_template) {
   night_sum <- S4Vectors::decode(updating_night_rle)
   
   day_r <- night_r <- raster_template
-  values(day_r) <- day_sum
-  values(night_r) <- night_sum
+  raster::values(day_r) <- day_sum
+  raster::values(night_r) <- night_sum
 
   this_year <- unique(footprints$year)
   this_month <- unique(footprints$month)
