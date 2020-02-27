@@ -4,10 +4,8 @@
 library(tidyverse)
 library(lubridate)
 library(sf)
-library(lwgeom)
 library(raster)
 library(fasterize)
-library(viridis)
 library(purrr)
 library(furrr)
 library(data.table)
@@ -15,8 +13,8 @@ library(data.table)
 # through the steps here
 if (!require("BiocManager")) {
   install.packages("BiocManager")
-  BiocManager::install("S4Vectors")
 }
+BiocManager::install("S4Vectors")
 library(S4Vectors)
 
 # global variables --------------------------------------------------------
