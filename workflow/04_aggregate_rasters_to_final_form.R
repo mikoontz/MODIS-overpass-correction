@@ -62,7 +62,7 @@ future_map(year_month_combos, .f = function(this_year_month_combo) {
   
   combined_filepath <- file.path("data", "data_output", paste0("MODIS-overpass-counts_", res(raster_template)[1], "_analysis-ready/monthly/", combined_filename))
   
-  raster::writeRaster(x = combined_rasters, filename = combined_filename)
+  raster::writeRaster(x = combined_rasters, filename = combined_filepath)
   
   system2(command = "aws", args = paste0('s3 cp ', combined_filepath, ' s3://earthlab-mkoontz/MODIS-overpass-counts_', res(raster_template)[1], '_analysis-ready/monthly/', combined_filename))
 })
