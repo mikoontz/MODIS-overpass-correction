@@ -11,6 +11,13 @@ library(viridis)
 library(purrr)
 library(furrr)
 library(data.table)
+# We want to use run length encoding to dramatically reduce the memory usage while iterating
+# through the steps here
+if (!require("BiocManager")) {
+  install.packages("BiocManager")
+  BiocManager::install("S4Vectors")
+}
+library(S4Vectors)
 
 # global variables --------------------------------------------------------
 
@@ -74,11 +81,11 @@ count_overpasses <- function(footprints, raster_template) {
                              night_overpass = night * overpass)]
            
            if(sum(daynight_r$day_overpass) > 0) {
-             day_overpass <- daynight_r$day_overpass
+             day_overpass <- S4Vectors::Rle(daynight_r$day_overpass)
            } else {day_overpass <- NULL}
            
            if(sum(daynight_r$night_overpass) > 0) {
-             night_overpass <- daynight_r$night_overpass
+             night_overpass <- S4Vectors::Rle(daynight_r$night_overpass)
            } else {night_overpass <- NULL}
            
            
@@ -90,16 +97,16 @@ count_overpasses <- function(footprints, raster_template) {
   
   day_sum <-
     day_sum[!sapply(day_sum, is.null)] %>% 
-    do.call("cbind", .) %>% 
-    rowSums()
+    do.call("+", .) %>% 
+    S4Vectors::decode()
   
   night_sum <- 
     lapply(overpasses, FUN = function(x) x$night_overpass)
   
   night_sum <-
     night_sum[!sapply(night_sum, is.null)] %>% 
-    do.call("cbind", .) %>% 
-    rowSums()
+    do.call("+", .) %>% 
+    S4Vectors::decode()
   
   day_r <- night_r <- raster_template
   values(day_r) <- day_sum
@@ -120,6 +127,9 @@ count_overpasses <- function(footprints, raster_template) {
   raster::writeRaster(x = night_r, filename = night_path)
   raster::writeRaster(x = day_r, filename = day_path)
   
+  rm(night_r)
+  rm(day_r)
+  
   system2(command = "aws", 
           args = paste0('s3 cp ', night_path, ' s3://earthlab-mkoontz/MODIS-overpass-counts_', res(raster_template)[1], '/', night_file))
   
@@ -132,7 +142,7 @@ count_overpasses <- function(footprints, raster_template) {
 
 # Figure out what has been processed already
 
-raster_template <- r_2.5
+raster_template <- r_0.25
   
 overpasses_processed <-
   system2(command = "aws", 
