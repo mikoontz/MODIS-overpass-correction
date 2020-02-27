@@ -93,26 +93,35 @@ count_overpasses <- function(footprints, raster_template) {
            return(list(day_overpass = day_overpass, night_overpass = night_overpass))
          })
   
-  day_sum <- 
-    lapply(overpasses, FUN = function(x) x$day_overpass)
+  # Drop the NULL elements from the returned per-granule list
+  day_sum <- lapply(overpasses, FUN = function(x) x$day_overpass)
+  day_sum <- day_sum[!sapply(day_sum, is.null)]
   
-  day_sum <-
-    day_sum[!sapply(day_sum, is.null)] %>% 
-    do.call("+", .) %>% 
-    S4Vectors::decode()
+  night_sum <- lapply(overpasses, FUN = function(x) x$night_overpass)
+  night_sum <- night_sum[!sapply(night_sum, is.null)]
+
+  # Loop through all the day_sum rle objects and add them to the updating one
+  updating_day_rle <- day_sum[[1]]
   
-  night_sum <- 
-    lapply(overpasses, FUN = function(x) x$night_overpass)
+  for(i in seq_along(day_sum)[-1]) {
+    updating_day_rle <- updating_day_rle + day_sum[[i]]
+  }
   
-  night_sum <-
-    night_sum[!sapply(night_sum, is.null)] %>% 
-    do.call("+", .) %>% 
-    S4Vectors::decode()
+  day_sum <- S4Vectors::decode(updating_day_rle)
+  
+  # Loop through all the night_sum rle objects and add them to the updating one
+  updating_night_rle <- night_sum[[1]]
+  
+  for(i in seq_along(night_sum)[-1]) {
+    updating_night_rle <- updating_night_rle + night_sum[[i]]
+  }
+  
+  night_sum <- S4Vectors::decode(updating_night_rle)
   
   day_r <- night_r <- raster_template
-  values(day_r) <- day_sum
-  values(night_r) <- night_sum
-  
+  raster::values(day_r) <- day_sum
+  raster::values(night_r) <- night_sum
+
   this_year <- unique(footprints$year)
   this_month <- unique(footprints$month)
   this_satellite <- unique(footprints$satellite)
@@ -185,7 +194,7 @@ overpasses_to_process <-
   dplyr::pull(footprints_processed)
 
 
-plan(multiprocess, workers = 2)
+plan(multiprocess)
 
 furrr::future_map(overpasses_to_process, .f = function(this_footprint) {
   
