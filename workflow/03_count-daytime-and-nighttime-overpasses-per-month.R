@@ -39,6 +39,9 @@ r_2.5 <- raster::raster("data/data_raw/grid_2_5_degree_vars_modis_D_AFC_num_Apri
 
 count_overpasses <- function(footprints, raster_template) {
   
+  # Ensure geometry sfc column is called "geometry"
+  footprints <- st_sf(st_drop_geometry(footprints), geometry = st_geometry(footprints))
+  
   overpasses <- 
     pmap(footprints, 
          .f = function(satellite, path, year, month, day, yday, GranuleID, StartDateTime, ArchiveSet, OrbitNumber, DayNightFlag, EastBoundingCoord, NorthBoundingCoord, SouthBoundingCoord, WestBoundingCoord, GRingLongitude1, GRingLongitude2, GRingLongitude3, GRingLongitude4, GRingLatitude1, GRingLatitude2, GRingLatitude3, GRingLatitude4, geometry) {
@@ -198,7 +201,7 @@ furrr::future_map(overpasses_to_process, .f = function(this_footprint) {
   
   this_overpass <- count_overpasses(footprints, raster_template)
   
-  # Don't dellete local file just yet.
+  # Don't delete local file just yet.
   # unlink(local_path)
   
 })
