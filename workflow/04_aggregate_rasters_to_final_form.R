@@ -67,7 +67,6 @@ future_map(year_month_combos, .f = function(this_year_month_combo) {
   system2(command = "aws", args = paste0('s3 cp ', combined_filepath, ' s3://earthlab-mkoontz/MODIS-overpass-counts_', res(raster_template)[1], '_analysis-ready/monthly/', combined_filename))
 })
 
-
 # Annual aggregations -----------------------------------------------------
 
 # We can use the rasters already created on a monthly timestep to create the ones on an
@@ -78,9 +77,8 @@ year_combos <-
   list.files(file.path("data", "data_output", paste0("MODIS-overpass-counts_", res(raster_template)[1], "_analysis-ready/monthly"))) %>% 
   enframe(name = NULL) %>% 
   setNames("filename") %>% 
-  dplyr::mutate(year = substr(year_month, start = 1, stop = 4),
-                resolution = substr(resolution, start = 1, stop = nchar(resolution) - 4)) %>% 
-  dplyr::mutate(daynight = ifelse(str_detect(daynight_overpass_count, pattern = "day"), yes = "day", no = "night")) %>% 
+  dplyr::mutate(year = substr(filename, start = 1, stop = 4)) %>% 
+  dplyr::mutate(daynight = ifelse(str_detect(filename, pattern = "day"), yes = "day", no = "night")) %>% 
   group_by(year, daynight) %>% 
   group_split()
 
@@ -89,6 +87,21 @@ if(!dir.exists(file.path("data", "data_output", paste0("MODIS-overpass-counts_",
   dir.create(file.path("data", "data_output", paste0("MODIS-overpass-counts_", res(raster_template)[1], "_analysis-ready/annual")))
 }
 
+future_map(year_combos, .f = function(this_year_combo) {
+  
+  rasters_to_read <- file.path("data", "data_output", paste0("MODIS-overpass-counts_", res(raster_template)[1], "_analysis-ready/monthly/", this_year_combo$filename))
+  
+  # Combine the rasters in this group by summing them across the stack
+  combined_rasters <- map(rasters_to_read, raster::raster) %>% raster::brick() %>% sum()
+  
+  combined_filename <- paste0(unique(this_year_combo$year), "_", unique(this_year_combo$daynight), "_overpass-count.tif")
+  
+  combined_filepath <- file.path("data", "data_output", paste0("MODIS-overpass-counts_", res(raster_template)[1], "_analysis-ready/annual/", combined_filename))
+  
+  raster::writeRaster(x = combined_rasters, filename = combined_filepath)
+  
+  system2(command = "aws", args = paste0('s3 cp ', combined_filepath, ' s3://earthlab-mkoontz/MODIS-overpass-counts_', res(raster_template)[1], '_analysis-ready/annual/', combined_filename))
+})
 
 # Aggregate across teh whole record ---------------------------------------
 
@@ -98,9 +111,7 @@ daynight_combos <-
   list.files(file.path("data", "data_output", paste0("MODIS-overpass-counts_", res(raster_template)[1], "_analysis-ready/annual"))) %>% 
   enframe(name = NULL) %>% 
   setNames("filename") %>% 
-  dplyr::mutate(year = substr(year_month, start = 1, stop = 4),
-                resolution = substr(resolution, start = 1, stop = nchar(resolution) - 4)) %>% 
-  dplyr::mutate(daynight = ifelse(str_detect(daynight_overpass_count, pattern = "day"), yes = "day", no = "night")) %>% 
+  dplyr::mutate(daynight = ifelse(str_detect(filename, pattern = "day"), yes = "day", no = "night")) %>% 
   group_by(daynight) %>% 
   group_split()
 
@@ -110,3 +121,20 @@ if(!dir.exists(file.path("data", "data_output", paste0("MODIS-overpass-counts_",
 }
 
 
+future_map(daynight_combos, .f = function(this_daynight_combo) {
+  
+  rasters_to_read <- file.path("data", "data_output", paste0("MODIS-overpass-counts_", res(raster_template)[1], "_analysis-ready/annual/", this_daynight_combo$filename))
+  
+  # Combine the rasters in this group by summing them across the stack
+  combined_rasters <- map(rasters_to_read, raster::raster) %>% raster::brick() %>% sum()
+  
+  combined_filename <- paste0(unique(this_daynight_combo$daynight), "_overpass-count.tif")
+  
+  combined_filepath <- file.path("data", "data_output", paste0("MODIS-overpass-counts_", res(raster_template)[1], "_analysis-ready/whole-record/", combined_filename))
+  
+  raster::writeRaster(x = combined_rasters, filename = combined_filepath)
+  
+  system2(command = "aws", args = paste0('s3 cp ', combined_filepath, ' s3://earthlab-mkoontz/MODIS-overpass-counts_', res(raster_template)[1], '_analysis-ready/whole-record/', combined_filename))
+})
+
+plan(sequential)
