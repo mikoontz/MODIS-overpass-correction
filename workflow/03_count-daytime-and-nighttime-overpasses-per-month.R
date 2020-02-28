@@ -14,7 +14,9 @@ library(data.table)
 if (!require("BiocManager")) {
   install.packages("BiocManager")
 }
-BiocManager::install("S4Vectors")
+if (!require("S4Vectors")) {
+  BiocManager::install("S4Vectors")
+}
 library(S4Vectors)
 
 # global variables --------------------------------------------------------
@@ -99,7 +101,7 @@ count_overpasses <- function(footprints, raster_template) {
   
   night_sum <- lapply(overpasses, FUN = function(x) x$night_overpass)
   night_sum <- night_sum[!sapply(night_sum, is.null)]
-
+  
   # Loop through all the day_sum rle objects and add them to the updating one
   updating_day_rle <- day_sum[[1]]
   
@@ -121,7 +123,7 @@ count_overpasses <- function(footprints, raster_template) {
   day_r <- night_r <- raster_template
   raster::values(day_r) <- day_sum
   raster::values(night_r) <- night_sum
-
+  
   this_year <- unique(footprints$year)
   this_month <- unique(footprints$month)
   this_satellite <- unique(footprints$satellite)
@@ -153,7 +155,7 @@ count_overpasses <- function(footprints, raster_template) {
 # Figure out what has been processed already
 
 raster_template <- r_0.25
-  
+
 overpasses_processed <-
   system2(command = "aws", 
           args = paste0("s3 ls s3://earthlab-mkoontz/MODIS-overpass-counts_", res(raster_template)[1], "/"), 
