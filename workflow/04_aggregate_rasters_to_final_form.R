@@ -9,12 +9,15 @@
 
 library(tidyverse)
 library(raster)
+library(furrr)
+library(purrr)
 
 # What is the raster template for the rasters being combined? We use the 
 # resolution of the x dimension to name the files (and thus to also search
 # for the files that have already been created)
 raster_template <- raster::raster("data/data_raw/grid_2_5_degree_vars_modis_D_AFC_num_April_2001.tif")
 # raster_template <- raster::raster("data/data_raw/grid_0_25_degree_vars_modis_D_AFC_num_April_2001.tif")
+# raster_template <- raster::raster("data/data_raw/AGG_1deg_SOLARELEV_nocorn_perc_day_total.tif")
 
 # create new directory to house the analysis ready data
 if(!dir.exists(file.path("data", "data_output", paste0("MODIS-overpass-counts_", res(raster_template)[1], "_analysis-ready/")))) {
