@@ -12,6 +12,8 @@ library(raster)
 library(furrr)
 library(purrr)
 
+target_years <- 2020
+
 # What is the raster template for the rasters being combined? We use the 
 # resolution of the x dimension to name the files (and thus to also search
 # for the files that have already been created)
@@ -28,6 +30,9 @@ if(!dir.exists(file.path("data", "data_output", paste0("MODIS-overpass-counts_",
 system2(command = "aws", 
         args = paste0("s3 sync s3://earthlab-mkoontz/MODIS-overpass-counts_", res(raster_template)[1], "/ data/data_output/MODIS-overpass-counts_", res(raster_template)[1], "/"))
 
+# What data have been processed to analysis ready already?
+system2(command = "aws", args = paste0("s3 sync s3://earthlab-mkoontz/MODIS-overpass-counts_", res(raster_template)[1], "_analysis-ready/ data/data_output/MODIS-overpass-counts_", res(raster_template)[1], "_analysis-ready/"))
+
 # all of the rasters on disk, plus some extra metadata extracted from the filename
 all_rasters <- 
   list.files(paste0("data/data_output/MODIS-overpass-counts_", res(raster_template)[1], "/")) %>% 
@@ -38,7 +43,6 @@ all_rasters <-
                 resolution = substr(resolution, start = 1, stop = nchar(resolution) - 4)) %>% 
   dplyr::mutate(daynight = ifelse(str_detect(daynight_overpass_count, pattern = "day"), yes = "day", no = "night"))
 
-
 # split the rasters by various means --------------------------------------
 
 # Split by year/month/daynight combinations -------------------------------
@@ -46,6 +50,7 @@ all_rasters <-
 year_month_combos <-
   all_rasters %>% 
   group_by(year_month, daynight) %>% 
+  dplyr::filter(year %in% target_years) %>% 
   group_split()
 
 # Create directory to house the year/month/daynight combinations
@@ -54,7 +59,6 @@ if(!dir.exists(file.path("data", "data_output", paste0("MODIS-overpass-counts_",
 }
 
 # work through the year/month/daynight combos -----------------------------
-
 plan(multiprocess)
 
 future_map(year_month_combos, .f = function(this_year_month_combo) {
@@ -85,6 +89,7 @@ year_combos <-
   setNames("filename") %>% 
   dplyr::mutate(year = substr(filename, start = 1, stop = 4)) %>% 
   dplyr::mutate(daynight = ifelse(str_detect(filename, pattern = "day"), yes = "day", no = "night")) %>% 
+  dplyr::filter(year %in% target_years) %>% 
   group_by(year, daynight) %>% 
   group_split()
 
@@ -95,7 +100,7 @@ if(!dir.exists(file.path("data", "data_output", paste0("MODIS-overpass-counts_",
 
 future_map(year_combos, .f = function(this_year_combo) {
   
-  rasters_to_read <- file.path("data", "data_output", paste0("MODIS-overpass-counts_", res(raster_template)[1], "_analysis-ready/monthly/", this_year_combo$filename))
+  rasters_to_read <- file.path("data", "data_output", paste0("MODIS-overpass-counts_", res(raster_template)[1], "_analysis-ready/year-month/", this_year_combo$filename))
   
   # Combine the rasters in this group by summing them across the stack
   combined_rasters <- map(rasters_to_read, raster::raster) %>% raster::brick() %>% sum()
@@ -144,73 +149,73 @@ future_map(daynight_combos, .f = function(this_daynight_combo) {
 })
 
 
-# aggregations to the 2003-2018 record ------------------------------------
+# aggregations to the 2003-2020 record ------------------------------------
 
-daynight_combos_2003_2018 <-
+daynight_combos_2003_2020 <-
   list.files(file.path("data", "data_output", paste0("MODIS-overpass-counts_", res(raster_template)[1], "_analysis-ready/annual"))) %>% 
   enframe(name = NULL) %>% 
   setNames("filename") %>% 
   dplyr::mutate(daynight = ifelse(str_detect(filename, pattern = "day"), yes = "day", no = "night"),
                 year = as.numeric(substr(x = filename, start = 1, stop = 4))) %>%
-  dplyr::filter(year >= 2003 & year <= 2018) %>% 
+  dplyr::filter(year >= 2003 & year <= 2020) %>% 
   group_by(daynight) %>% 
   group_split()
 
 # Create directory to house the whole record's day/night overpass count
-if(!dir.exists(file.path("data", "data_output", paste0("MODIS-overpass-counts_", res(raster_template)[1], "_analysis-ready/2003-2018")))) {
-  dir.create(file.path("data", "data_output", paste0("MODIS-overpass-counts_", res(raster_template)[1], "_analysis-ready/2003-2018")))
+if(!dir.exists(file.path("data", "data_output", paste0("MODIS-overpass-counts_", res(raster_template)[1], "_analysis-ready/2003-2020")))) {
+  dir.create(file.path("data", "data_output", paste0("MODIS-overpass-counts_", res(raster_template)[1], "_analysis-ready/2003-2020")))
 }
 
-future_map(daynight_combos_2003_2018, .f = function(this_combo) {
+future_map(daynight_combos_2003_2020, .f = function(this_combo) {
   
   rasters_to_read <- file.path("data", "data_output", paste0("MODIS-overpass-counts_", res(raster_template)[1], "_analysis-ready/annual/", this_combo$filename))
   
   # Combine the rasters in this group by summing them across the stack
   combined_rasters <- map(rasters_to_read, raster::raster) %>% raster::brick() %>% sum()
   
-  combined_filename <- paste0("2003-2018_", unique(this_combo$daynight), "_overpass-count.tif")
+  combined_filename <- paste0("2003-2020_", unique(this_combo$daynight), "_overpass-count.tif")
   
-  combined_filepath <- file.path("data", "data_output", paste0("MODIS-overpass-counts_", res(raster_template)[1], "_analysis-ready/2003-2018/", combined_filename))
+  combined_filepath <- file.path("data", "data_output", paste0("MODIS-overpass-counts_", res(raster_template)[1], "_analysis-ready/2003-2020/", combined_filename))
   
   raster::writeRaster(x = combined_rasters, filename = combined_filepath)
   
-  system2(command = "aws", args = paste0('s3 cp ', combined_filepath, ' s3://earthlab-mkoontz/MODIS-overpass-counts_', res(raster_template)[1], '_analysis-ready/2003-2018/', combined_filename))
+  system2(command = "aws", args = paste0('s3 cp ', combined_filepath, ' s3://earthlab-mkoontz/MODIS-overpass-counts_', res(raster_template)[1], '_analysis-ready/2003-2020/', combined_filename))
   
 })
 
 
-# aggregations to each month, but across the 2003-2018 record ------------------------------------
+# aggregations to each month, but across the 2003-2020 record ------------------------------------
 
-daynight_combos_month_2003_2018 <-
+daynight_combos_month_2003_2020 <-
   list.files(file.path("data", "data_output", paste0("MODIS-overpass-counts_", res(raster_template)[1], "_analysis-ready/year-month"))) %>% 
   enframe(name = NULL) %>% 
   setNames("filename") %>% 
   dplyr::mutate(year = substr(filename, start = 1, stop = 4)) %>% 
   dplyr::mutate(daynight = ifelse(str_detect(filename, pattern = "day"), yes = "day", no = "night")) %>% 
   dplyr::mutate(month = substr(filename, start = 6, stop = 7)) %>% 
-  dplyr::filter(year >= 2003 & year <= 2018) %>% 
+  dplyr::filter(year >= 2003 & year <= 2020) %>% 
   dplyr::group_by(month, daynight) %>% 
   dplyr::group_split()
   
 # Create directory to house the whole record's day/night overpass count
-if(!dir.exists(file.path("data", "data_output", paste0("MODIS-overpass-counts_", res(raster_template)[1], "_analysis-ready/month_2003-2018")))) {
-  dir.create(file.path("data", "data_output", paste0("MODIS-overpass-counts_", res(raster_template)[1], "_analysis-ready/month_2003-2018")))
+if(!dir.exists(file.path("data", "data_output", paste0("MODIS-overpass-counts_", res(raster_template)[1], "_analysis-ready/month_2003-2020")))) {
+  dir.create(file.path("data", "data_output", paste0("MODIS-overpass-counts_", res(raster_template)[1], "_analysis-ready/month_2003-2020")))
 }
 
-future_map(daynight_combos_month_2003_2018, .f = function(this_combo) {
+future_map(daynight_combos_month_2003_2020, .f = function(this_combo) {
   
   rasters_to_read <- file.path("data", "data_output", paste0("MODIS-overpass-counts_", res(raster_template)[1], "_analysis-ready/year-month/", this_combo$filename))
   
   # Combine the rasters in this group by summing them across the stack
   combined_rasters <- map(rasters_to_read, raster::raster) %>% raster::brick() %>% sum()
   
-  combined_filename <- paste0(unique(this_combo$month), "_2003-2018_", unique(this_combo$daynight), "_overpass-count.tif")
+  combined_filename <- paste0(unique(this_combo$month), "_2003-2020_", unique(this_combo$daynight), "_overpass-count.tif")
   
-  combined_filepath <- file.path("data", "data_output", paste0("MODIS-overpass-counts_", res(raster_template)[1], "_analysis-ready/month_2003-2018/", combined_filename))
+  combined_filepath <- file.path("data", "data_output", paste0("MODIS-overpass-counts_", res(raster_template)[1], "_analysis-ready/month_2003-2020/", combined_filename))
   
   raster::writeRaster(x = combined_rasters, filename = combined_filepath)
   
-  system2(command = "aws", args = paste0('s3 cp ', combined_filepath, ' s3://earthlab-mkoontz/MODIS-overpass-counts_', res(raster_template)[1], '_analysis-ready/month_2003-2018/', combined_filename))
+  system2(command = "aws", args = paste0('s3 cp ', combined_filepath, ' s3://earthlab-mkoontz/MODIS-overpass-counts_', res(raster_template)[1], '_analysis-ready/month_2003-2020/', combined_filename))
   
 })
 
