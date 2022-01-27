@@ -1,3 +1,5 @@
+[![DOI](https://zenodo.org/badge/242573943.svg)](https://zenodo.org/badge/latestdoi/242573943)
+
 # MODIS-overpass-correction
 
 The Aqua and Terra satellites pass over latitudes at different rates (~4 combined overpasses per day near equator, and ~30 combined overpasses per day near poles). 
